@@ -3,12 +3,12 @@ import lasagne
 import theano
 import theano.tensor as T
 import sys
-import batch_char as batch
-import cPickle as pkl
+import tweet2vec.batch_char as batch
+import pickle as pkl
 import io
 
-from t2v import tweet2vec, init_params, load_params
-from settings_char import N_BATCH, MAX_LENGTH, MAX_CLASSES
+from tweet2vec.t2v import tweet2vec, init_params, load_params
+from tweet2vec.settings_char import N_BATCH, MAX_LENGTH, MAX_CLASSES
 
 def invert(d):
     out = {}

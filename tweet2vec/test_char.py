@@ -4,15 +4,15 @@ import theano
 import theano.tensor as T
 import random
 import sys
-import batch_char as batch
+import tweet2vec.batch_char as batch
 import time
-import cPickle as pkl
+import pickle as pkl
 import io
-import evaluate
+import tweet2vec.evaluate
 
 from collections import OrderedDict
-from t2v import tweet2vec, init_params, load_params
-from settings_char import N_BATCH, MAX_LENGTH, MAX_CLASSES
+from tweet2vec.t2v import tweet2vec, init_params, load_params
+from tweet2vec.settings_char import N_BATCH, MAX_LENGTH, MAX_CLASSES
 
 def classify(tweet, t_mask, params, n_classes, n_chars):
     # tweet embedding

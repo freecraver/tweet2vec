@@ -34,3 +34,7 @@ GRAD_CLIP = 5.
 BIAS = False
 # use schedule
 SCHEDULE = True
+
+# extensions by MF
+# validate per user, not per tweet
+IS_GROUPED_VALIDATION = True

@@ -3,7 +3,7 @@ For evaluating precision and recall metrics
 '''
 import numpy as np
 import sys
-import cPickle as pkl
+import pickle as pkl
 import io
 
 import matplotlib.pyplot as plt

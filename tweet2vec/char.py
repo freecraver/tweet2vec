@@ -6,52 +6,77 @@ import numpy as np
 import lasagne
 import theano
 import theano.tensor as T
-import random
 import sys
-import batch_char as batch
+import tweet2vec.batch_char as batch
 import time
-import cPickle as pkl
+import pickle as pkl
 import io
 import shutil
 
 from collections import OrderedDict
-from t2v import tweet2vec, init_params, load_params_shared
-from settings_char import NUM_EPOCHS, N_BATCH, MAX_LENGTH, SCALE, WDIM, MAX_CLASSES, LEARNING_RATE, DISPF, SAVEF, REGULARIZATION, RELOAD_MODEL, MOMENTUM, SCHEDULE
-from evaluate import precision
+from tweet2vec.t2v import tweet2vec, init_params, load_params_shared
+from tweet2vec.settings_char import NUM_EPOCHS, N_BATCH, MAX_LENGTH, SCALE, WDIM, MAX_CLASSES, LEARNING_RATE, DISPF, \
+    SAVEF, REGULARIZATION, RELOAD_MODEL, MOMENTUM, SCHEDULE, IS_GROUPED_VALIDATION
+from tweet2vec.evaluate import precision
 
 T1 = 0.01
 T2 = 0.0001
 
+
 def schedule(lr, mu):
     print("Updating Schedule...")
-    lr = max(1e-5,lr/2)
+    lr = max(1e-5, lr / 2)
     return lr, mu
+
 
 def tnorm(tens):
     '''
     Tensor Norm
     '''
-    return T.sqrt(T.sum(T.sqr(tens),axis=1))
+    return T.sqrt(T.sum(T.sqr(tens), axis=1))
+
+def predictUser(single_predictions, users, n_classes):
+    '''
+    Override single tweet-predictions by the predictions of their user
+    :param single_predictions: matrix of probabilities (tweet X classes)
+    :param users: list of authors for given tweets, has to be in same order as single_predictions
+    :param n_classes: amount of different classes
+    :return: Matrix of class-predictions (all tweets of a user have the same values)
+    '''
+
+    np_single_predictions = np.array(single_predictions)
+    unique_users, user_indices, user_cnt = np.unique(users, return_inverse=True, return_counts=True)
+    avg_class_probabilities = np.zeros(len(unique_users) * n_classes).reshape(len(unique_users), n_classes)
+    # get average probability for each user as an array with a value for each class
+    for i in range(len(unique_users)):
+        avg_class_probabilities[i] = [sum(x) / user_cnt[i] for x in zip(*np_single_predictions[user_indices == i])]
+
+    # order by descending probability
+    rank = np.argsort(avg_class_probabilities)[:, ::-1]
+
+    return rank[user_indices]
 
 def classify(tweet, t_mask, params, n_classes, n_chars):
     # tweet embedding
     emb_layer = tweet2vec(tweet, t_mask, params, n_chars)
     # Dense layer for classes
-    l_dense = lasagne.layers.DenseLayer(emb_layer, n_classes, W=params['W_cl'], b=params['b_cl'], nonlinearity=lasagne.nonlinearities.softmax)
+    l_dense = lasagne.layers.DenseLayer(emb_layer, n_classes, W=params['W_cl'], b=params['b_cl'],
+                                        nonlinearity=lasagne.nonlinearities.softmax)
 
     return lasagne.layers.get_output(l_dense), l_dense, lasagne.layers.get_output(emb_layer)
 
-def main(train_path,val_path,save_path,num_epochs=NUM_EPOCHS):
+
+def main(train_path, val_path, save_path, num_epochs=NUM_EPOCHS):
     global T1
 
     # save settings
-    shutil.copyfile('settings_char.py','%s/settings_char.txt'%save_path)
+    shutil.copyfile('tweet2vec/settings_char.py', '%s/settings_char.txt' % save_path)
 
     print("Preparing Data...")
     # Training data
     Xt = []
     yt = []
-    with io.open(train_path,'r',encoding='utf-8') as f:
+    with io.open(train_path, 'r', encoding='utf-8') as f:
         for line in f:
             (yc, Xc) = line.rstrip('\n').split('\t')
             Xt.append(Xc[:MAX_LENGTH])
@@ -59,28 +84,39 @@ def main(train_path,val_path,save_path,num_epochs=NUM_EPOCHS):
     # Validation data
     Xv = []
     yv = []
-    with io.open(val_path,'r',encoding='utf-8') as f:
-        for line in f:
-            (yc, Xc) = line.rstrip('\n').split('\t')
-            Xv.append(Xc[:MAX_LENGTH])
-            yv.append(yc.split(','))
+    userV = []
+
+    with io.open(val_path, 'r', encoding='utf-8') as f:
+        if IS_GROUPED_VALIDATION:
+            for line in f:
+                (userC, yc, Xc) = line.rstrip('\n').split('\t')
+                Xv.append(Xc[:MAX_LENGTH])
+                yv.append(yc.split(','))
+                userV.append(userC)
+        else:
+            for line in f:
+                # TODO: remove _
+                (_,yc, Xc) = line.rstrip('\n').split('\t')
+                Xv.append(Xc[:MAX_LENGTH])
+                yv.append(yc.split(','))
 
     print("Building Model...")
     if not RELOAD_MODEL:
         # Build dictionaries from training data
         chardict, charcount = batch.build_dictionary(Xt)
         n_char = len(chardict.keys()) + 1
-        batch.save_dictionary(chardict,charcount,'%s/dict.pkl' % save_path)
+        batch.save_dictionary(chardict, charcount, '%s/dict.pkl' % save_path)
         # params
         params = init_params(n_chars=n_char)
-        
+
         labeldict, labelcount = batch.build_label_dictionary(yt)
         batch.save_dictionary(labeldict, labelcount, '%s/label_dict.pkl' % save_path)
 
         n_classes = min(len(labeldict.keys()) + 1, MAX_CLASSES)
 
         # classification params
-        params['W_cl'] = theano.shared(np.random.normal(loc=0., scale=SCALE, size=(WDIM,n_classes)).astype('float32'), name='W_cl')
+        params['W_cl'] = theano.shared(np.random.normal(loc=0., scale=SCALE, size=(WDIM, n_classes)).astype('float32'),
+                                       name='W_cl')
         params['b_cl'] = theano.shared(np.zeros((n_classes)).astype('float32'), name='b_cl')
 
     else:
@@ -97,7 +133,10 @@ def main(train_path,val_path,save_path,num_epochs=NUM_EPOCHS):
 
     # iterators
     train_iter = batch.BatchTweets(Xt, yt, labeldict, batch_size=N_BATCH, max_classes=MAX_CLASSES)
-    val_iter = batch.BatchTweets(Xv, yv, labeldict, batch_size=N_BATCH, max_classes=MAX_CLASSES, test=True)
+    if IS_GROUPED_VALIDATION:
+        val_iter = batch.BatchTweets(Xv, yv, labeldict, batch_size=N_BATCH, max_classes=MAX_CLASSES, test=True,users = userV)
+    else:
+        val_iter = batch.BatchTweets(Xv, yv, labeldict, batch_size=N_BATCH, max_classes=MAX_CLASSES, test=True)
 
     print("Building network...")
     # Tweet variables
@@ -111,9 +150,10 @@ def main(train_path,val_path,save_path,num_epochs=NUM_EPOCHS):
 
     # batch loss
     loss = lasagne.objectives.categorical_crossentropy(predictions, targets)
-    cost = T.mean(loss) + REGULARIZATION*lasagne.regularization.regularize_network_params(net, lasagne.regularization.l2)
+    cost = T.mean(loss) + REGULARIZATION * lasagne.regularization.regularize_network_params(net,
+                                                                                            lasagne.regularization.l2)
     cost_only = T.mean(loss)
-    reg_only = REGULARIZATION*lasagne.regularization.regularize_network_params(net, lasagne.regularization.l2)
+    reg_only = REGULARIZATION * lasagne.regularization.regularize_network_params(net, lasagne.regularization.l2)
 
     # params and updates
     print("Computing updates...")
@@ -123,11 +163,11 @@ def main(train_path,val_path,save_path,num_epochs=NUM_EPOCHS):
 
     # Theano function
     print("Compiling theano functions...")
-    inps = [tweet,t_mask,targets]
-    predict = theano.function([tweet,t_mask],predictions)
-    cost_val = theano.function(inps,[cost_only,emb])
-    train = theano.function(inps,cost,updates=updates)
-    reg_val = theano.function([],reg_only)
+    inps = [tweet, t_mask, targets]
+    predict = theano.function([tweet, t_mask], predictions)
+    cost_val = theano.function(inps, [cost_only, emb])
+    train = theano.function(inps, cost, updates=updates)
+    reg_val = theano.function([], reg_only)
 
     # Training
     print("Training...")
@@ -136,96 +176,118 @@ def main(train_path,val_path,save_path,num_epochs=NUM_EPOCHS):
     start = time.time()
     valcosts = []
     try:
-	for epoch in range(num_epochs):
-	    n_samples = 0
+        for epoch in range(num_epochs):
+            n_samples = 0
             train_cost = 0.
-	    print("Epoch {}".format(epoch))
+            print("Epoch {}".format(epoch))
 
             # learning schedule
             if len(valcosts) > 1 and SCHEDULE:
-                change = (valcosts[-1]-valcosts[-2])/abs(valcosts[-2])
+                change = (valcosts[-1] - valcosts[-2]) / abs(valcosts[-2])
                 if change < T1:
                     lr, mu = schedule(lr, mu)
-                    updates = lasagne.updates.nesterov_momentum(cost, lasagne.layers.get_all_params(net), lr, momentum=mu)
-                    train = theano.function(inps,cost,updates=updates)
-                    T1 = T1/2
+                    updates = lasagne.updates.nesterov_momentum(cost, lasagne.layers.get_all_params(net), lr,
+                                                                momentum=mu)
+                    train = theano.function(inps, cost, updates=updates)
+                    T1 = T1 / 2
 
             # stopping criterion
             if len(valcosts) > 6:
                 deltas = []
                 for i in range(5):
-                    deltas.append((valcosts[-i-1]-valcosts[-i-2])/abs(valcosts[-i-2]))
-                if sum(deltas)/len(deltas) < T2:
+                    deltas.append((valcosts[-i - 1] - valcosts[-i - 2]) / abs(valcosts[-i - 2]))
+                if sum(deltas) / len(deltas) < T2:
                     break
 
             ud_start = time.time()
-	    for xr,y in train_iter:
-		n_samples +=len(xr)
-		uidx += 1
-		x, x_m = batch.prepare_data(xr, chardict, n_chars=n_char)
-		if x is None:
-		    print("Minibatch with zero samples under maxlength.")
-		    uidx -= 1
-		    continue
+            for xr, y in train_iter:
+                n_samples += len(xr)
+                uidx += 1
+                x, x_m = batch.prepare_data(xr, chardict, n_chars=n_char)
+                if x is None:
+                    print("Minibatch with zero samples under maxlength.")
+                    uidx -= 1
+                    continue
 
-		curr_cost = train(x,x_m,y)
-                train_cost += curr_cost*len(xr)
-		ud = time.time() - ud_start
+                curr_cost = train(x, x_m, y)
+                train_cost += curr_cost * len(xr)
+                ud = time.time() - ud_start
 
-		if np.isnan(curr_cost) or np.isinf(curr_cost):
-		    print("Nan detected.")
-		    return
+                if np.isnan(curr_cost) or np.isinf(curr_cost):
+                    print("Nan detected.")
+                    return
 
-		if np.mod(uidx, DISPF) == 0:
-		    print("Epoch {} Update {} Cost {} Time {}".format(epoch,uidx,curr_cost,ud))
+                if np.mod(uidx, DISPF) == 0:
+                    print("Epoch {} Update {} Cost {} Time {}".format(epoch, uidx, curr_cost, ud))
 
-		if np.mod(uidx,SAVEF) == 0:
-		    print("Saving...")
-		    saveparams = OrderedDict()
-		    for kk,vv in params.iteritems():
-			saveparams[kk] = vv.get_value()
-		    np.savez('%s/model.npz' % save_path,**saveparams)
-		    print("Done.")
+                if np.mod(uidx, SAVEF) == 0:
+                    print("Saving...")
+                    saveparams = OrderedDict()
+                    for kk, vv in params.iteritems():
+                        saveparams[kk] = vv.get_value()
+                    np.savez('%s/model.npz' % save_path, **saveparams)
+                    print("Done.")
 
             print("Testing on Validation set...")
             preds = []
             targs = []
-	    for xr,y in val_iter:
-		x, x_m = batch.prepare_data(xr, chardict, n_chars=n_char)
-		if x is None:
-                    print("Validation: Minibatch with zero samples under maxlength.")
-		    continue
 
-                vp = predict(x,x_m)
-                ranks = np.argsort(vp)[:,::-1]
-                for idx,item in enumerate(xr):
-                    preds.append(ranks[idx,:])
-                    targs.append(y[idx])
+            if IS_GROUPED_VALIDATION:
+                # Store predictions and users to be able to override them before validation
+                single_preds = []
+                single_users = []
 
-            validation_cost = precision(np.asarray(preds),targs,1)
+                for xr,y,users in val_iter:
+                    x, x_m = batch.prepare_data(xr, chardict, n_chars=n_char)
+                    if x is None:
+                        print("Validation: Minibatch with zero samples under maxlength.")
+                        continue
+                    vp = predict(x,x_m)
+                    single_preds.extend(vp)
+                    single_users.extend(users)
+                    targs.extend(y)
+
+                # use user-level predictions, not tweet-level predictions
+                preds = predictUser(single_preds,single_users,n_classes)
+            else:
+                for xr, y in val_iter:
+                    x, x_m = batch.prepare_data(xr, chardict, n_chars=n_char)
+                    if x is None:
+                        print("Validation: Minibatch with zero samples under maxlength.")
+                        continue
+
+                    vp = predict(x, x_m)
+                    ranks = np.argsort(vp)[:, ::-1]
+                    for idx, item in enumerate(xr):
+                        preds.append(ranks[idx, :])
+                        targs.append(y[idx])
+
+            validation_cost = precision(np.asarray(preds), targs, 1)
             regularization_cost = reg_val()
 
             if validation_cost > maxp:
                 maxp = validation_cost
                 saveparams = OrderedDict()
-                for kk,vv in params.iteritems():
+                for kk, vv in params.iteritems():
                     saveparams[kk] = vv.get_value()
-                np.savez('%s/best_model.npz' % (save_path),**saveparams)
+                np.savez('%s/best_model.npz' % (save_path), **saveparams)
 
-	    print("Epoch {} Training Cost {} Validation Precision {} Regularization Cost {} Max Precision {}".format(epoch, train_cost/n_samples, validation_cost, regularization_cost, maxp))
-	    print("Seen {} samples.".format(n_samples))
+            print("Epoch {} Training Cost {} Validation Precision {} Regularization Cost {} Max Precision {}".format(
+                epoch, train_cost / n_samples, validation_cost, regularization_cost, maxp))
+            print("Seen {} samples.".format(n_samples))
             valcosts.append(validation_cost)
 
             print("Saving...")
             saveparams = OrderedDict()
-            for kk,vv in params.iteritems():
+            for kk, vv in params.iteritems():
                 saveparams[kk] = vv.get_value()
-            np.savez('%s/model_%d.npz' % (save_path,epoch),**saveparams)
+            np.savez('%s/model_%d.npz' % (save_path, epoch), **saveparams)
             print("Done.")
 
     except KeyboardInterrupt:
-	pass
-    print("Total training time = {}".format(time.time()-start))
+        pass
+    print("Total training time = {}".format(time.time() - start))
+
 
 if __name__ == '__main__':
-    main(sys.argv[1],sys.argv[2],sys.argv[3])
+    main(sys.argv[1], sys.argv[2], sys.argv[3])

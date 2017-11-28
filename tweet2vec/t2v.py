@@ -6,7 +6,7 @@ import random
 import pdb
 
 from collections import OrderedDict
-from settings_char import N_BATCH, MAX_LENGTH, CHAR_DIM, SCALE, C2W_HDIM, WDIM, GRAD_CLIP, BIAS
+from tweet2vec.settings_char import N_BATCH, MAX_LENGTH, CHAR_DIM, SCALE, C2W_HDIM, WDIM, GRAD_CLIP, BIAS
 
 def init_params(n_chars):
     '''
@@ -100,10 +100,11 @@ def load_params(path):
     """
     params = OrderedDict()
 
-    with open(path,'r') as f:
-        npzfile = np.load(f)
-        for kk, vv in npzfile.iteritems():
-            params[kk] = vv
+# NOTE MF: open with numpy, not #open
+#    with open(path,'r') as f:
+    npzfile = np.load(path)
+    for kk, vv in npzfile.iteritems():
+        params[kk] = vv
 
     return params
 

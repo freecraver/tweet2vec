@@ -1,13 +1,12 @@
 import numpy as np
-import cPickle as pkl
-import codecs
+import pickle as pkl
 
 from collections import OrderedDict
-from settings_char import MAX_LENGTH
+from tweet2vec.settings_char import MAX_LENGTH
 
 class BatchTweets():
 
-    def __init__(self, data, targets, labeldict, batch_size=128, max_classes=1000, test=False):
+    def __init__(self, data, targets, labeldict, batch_size=128, max_classes=1000, test=False, users=None):
         # convert targets to indices
         if not test:
             tags = []
@@ -21,6 +20,7 @@ class BatchTweets():
         self.batch_size = batch_size
         self.data = data
         self.targets = tags
+        self.users = users # username of tweet-author
 
         self.prepare()
         self.reset()
@@ -51,10 +51,16 @@ class BatchTweets():
         x = [self.data[ii] for ii in curr_indices]
         y = [self.targets[ii] for ii in curr_indices]
 
-        return x, y
+        if self.users is None:
+            return x, y
+        else:
+            # also return usernames if they are present
+            z = [self.users[ii] for ii in curr_indices]
+            return x,y,z
 
     def __iter__(self):
         return self
+
 
 def prepare_data(seqs_x, chardict, n_chars=1000):
     """
@@ -92,6 +98,7 @@ def build_dictionary(text):
     chars = charcount.keys()
     freqs = charcount.values()
     sorted_idx = np.argsort(freqs)[::-1]
+
 
     chardict = OrderedDict()
     for idx, sidx in enumerate(sorted_idx):
