@@ -1,0 +1,7 @@
+### Each class-label should be on a new line
+
+oevp
+spoe
+gruen
+fpoe
+neos
