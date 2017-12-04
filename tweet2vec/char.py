@@ -3,6 +3,7 @@ Tweet2Vec classifier trainer
 '''
 
 import numpy as np
+import pandas as pd
 import lasagne
 import theano
 import theano.tensor as T
@@ -16,7 +17,8 @@ import shutil
 from collections import OrderedDict
 from tweet2vec.t2v import tweet2vec, init_params, load_params_shared
 from tweet2vec.settings_char import NUM_EPOCHS, N_BATCH, MAX_LENGTH, SCALE, WDIM, MAX_CLASSES, LEARNING_RATE, DISPF, \
-    SAVEF, REGULARIZATION, RELOAD_MODEL, MOMENTUM, SCHEDULE, IS_GROUPED_VALIDATION
+    SAVEF, REGULARIZATION, RELOAD_MODEL, MOMENTUM, SCHEDULE, IS_GROUPED_VALIDATION, USE_ITERATIVE_LEARNING, \
+    NUM_EPOCHS_INCLUSION, PERCENTAGE_ADDED_PER_EPOCH, DEBUG_MODE
 from tweet2vec.evaluate import precision
 
 T1 = 0.01
@@ -35,14 +37,17 @@ def tnorm(tens):
     '''
     return T.sqrt(T.sum(T.sqr(tens), axis=1))
 
-def predictUser(single_predictions, users, n_classes):
-    '''
+def predictUser(single_predictions, users, n_classes, nr_top_value=None, labeldict=None):
+    """
     Override single tweet-predictions by the predictions of their user
     :param single_predictions: matrix of probabilities (tweet X classes)
     :param users: list of authors for given tweets, has to be in same order as single_predictions
     :param n_classes: amount of different classes
-    :return: Matrix of class-predictions (all tweets of a user have the same values)
-    '''
+    :param nr_top_value: amount users that are returned
+    :return: Matrix of class-predictions (all tweets of a user have the same values);
+            Boolean matrix for tweets, telling if they should be included to training-set
+            (only when nr_top_value is not None)
+    """
 
     np_single_predictions = np.array(single_predictions)
     unique_users, user_indices, user_cnt = np.unique(users, return_inverse=True, return_counts=True)
@@ -54,7 +59,27 @@ def predictUser(single_predictions, users, n_classes):
     # order by descending probability
     rank = np.argsort(avg_class_probabilities)[:, ::-1]
 
-    return rank[user_indices]
+    if DEBUG_MODE:
+        # TODO: labeldict.keys + [empty]
+        pdFrame = pd.DataFrame(avg_class_probabilities, index=unique_users, columns=np.array([u'none'] + list(labeldict.keys())))
+        print(pdFrame)
+
+    if nr_top_value is None:
+        # default logic
+        return rank[user_indices]
+    else:
+        # max value per row (how certain can a user be classified?)
+        certainty = np.amax(avg_class_probabilities, axis=1)
+        # include only top X users
+        included_user_indices = np.argsort(certainty)[:len(unique_users)-int(nr_top_value)-1:-1]
+
+        if DEBUG_MODE:
+            print("---- users added to training set ----")
+            print(pdFrame.loc[unique_users[included_user_indices]])
+
+        included_user_matrix = np.isin(user_indices, included_user_indices)
+        return rank[user_indices], included_user_matrix
+
 
 def classify(tweet, t_mask, params, n_classes, n_chars):
     # tweet embedding
@@ -132,7 +157,10 @@ def main(train_path, val_path, save_path, num_epochs=NUM_EPOCHS):
         n_classes = min(len(labeldict.keys()) + 1, MAX_CLASSES)
 
     # iterators
-    train_iter = batch.BatchTweets(Xt, yt, labeldict, batch_size=N_BATCH, max_classes=MAX_CLASSES)
+    if USE_ITERATIVE_LEARNING:
+        train_iter = batch.IterativeBatchTweets(Xt,yt,labeldict,batch_size=N_BATCH,max_classes=MAX_CLASSES)
+    else:
+        train_iter = batch.BatchTweets(Xt, yt, labeldict, batch_size=N_BATCH, max_classes=MAX_CLASSES)
     if IS_GROUPED_VALIDATION:
         val_iter = batch.BatchTweets(Xv, yv, labeldict, batch_size=N_BATCH, max_classes=MAX_CLASSES, test=True,users = userV)
     else:
@@ -236,6 +264,7 @@ def main(train_path, val_path, save_path, num_epochs=NUM_EPOCHS):
                 # Store predictions and users to be able to override them before validation
                 single_preds = []
                 single_users = []
+                tweets = []
 
                 for xr,y,users in val_iter:
                     x, x_m = batch.prepare_data(xr, chardict, n_chars=n_char)
@@ -246,9 +275,20 @@ def main(train_path, val_path, save_path, num_epochs=NUM_EPOCHS):
                     single_preds.extend(vp)
                     single_users.extend(users)
                     targs.extend(y)
+                    if USE_ITERATIVE_LEARNING:
+                        tweets.extend(xr)
 
-                # use user-level predictions, not tweet-level predictions
-                preds = predictUser(single_preds,single_users,n_classes)
+                if USE_ITERATIVE_LEARNING and epoch >= NUM_EPOCHS_INCLUSION:
+                    nr_included_users = len(set(single_users)) * PERCENTAGE_ADDED_PER_EPOCH * (epoch+1-NUM_EPOCHS_INCLUSION)
+                    preds, tweet_included = predictUser(single_preds, single_users, n_classes, nr_included_users, labeldict)
+                    new_tweets = np.array(tweets)[tweet_included]
+                    new_targets = np.array(preds)[tweet_included][:,0]
+                    # remove all validation-set tweets from training set and add current top tweets
+                    train_iter.remove_last_testset_tweets()
+                    train_iter.add_tweets(new_tweets, new_targets)
+                else:
+                    # use user-level predictions, not tweet-level predictions
+                    preds = predictUser(single_preds,single_users,n_classes,labeldict=labeldict)
             else:
                 for xr, y in val_iter:
                     x, x_m = batch.prepare_data(xr, chardict, n_chars=n_char)

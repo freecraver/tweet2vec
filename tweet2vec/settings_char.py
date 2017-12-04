@@ -38,3 +38,15 @@ SCHEDULE = True
 # extensions by MF
 # validate per user, not per tweet
 IS_GROUPED_VALIDATION = True
+
+# add users from validation/test-set iteratively to improve network
+USE_ITERATIVE_LEARNING = True
+
+# number of epoch from which on tweets from test-set are added
+NUM_EPOCHS_INCLUSION = 6
+
+# percentage of users added to training-set per epoch
+PERCENTAGE_ADDED_PER_EPOCH = 0.05
+
+# print additional info
+DEBUG_MODE = True

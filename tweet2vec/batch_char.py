@@ -62,6 +62,29 @@ class BatchTweets():
         return self
 
 
+class IterativeBatchTweets(object, BatchTweets):
+    """
+        used for storing #BatchTweets and additional tweets, which are not part of training data
+    """
+
+    def __init__(self, data, targets, labeldict, batch_size=128, max_classes=1000):
+        BatchTweets.__init__(self, data, targets, labeldict, batch_size, max_classes)
+        self.training_data = list(self.data)
+        self.training_targets = list(self.targets)
+
+    def remove_last_testset_tweets(self):
+        self.data = list(self.training_data)
+        self.targets = list(self.training_targets)
+        BatchTweets.reset(self)
+
+    def add_tweets(self,data,targets):
+        # add training data to iterator
+        self.data.extend(data)
+        self.targets.extend(targets)
+        BatchTweets.prepare(self)
+        BatchTweets.reset(self)
+
+
 def prepare_data(seqs_x, chardict, n_chars=1000):
     """
     Prepare the data for training - add masks and remove infrequent characters
