@@ -10,7 +10,7 @@ ALREADY_FETCHED_USERS_FILE = "input/fetchedUsers.txt"
 TRAINING_FILE = "input/tweet_training.txt"
 
 # File holding input for validation, in format <label><TAB><Tweet>
-VALIDATION_FILE = "input/tweet_validation.txt"
+VALIDATION_FILE = "input/tweet_test.txt"
 
 # File used for specifying the twitter-users that should be fetched (csv of format <TwitterHandle>,<label>
 USER_INPUT_FILE = "input/user.csv"
@@ -22,25 +22,25 @@ IS_VALIDATION = True
 PATH_MODEL = "model"
 
 # Path where results should be stored
-PATH_RESULT = "result/"
+PATH_RESULT = "result"
 
 # Specifies, if the amount of Twitter-users per class should be equalized
 EQUALIZE_USERS_FOR_CLASSES = True
 
 # fill in your Twitter-handles
-CONSUMER_KEY="b2PbrS2nGK4anadj7gtD9dFq5"
-CONSUMER_SECRET="fvSZmshQRe8V0w7DnfNXxRkFvFWOHw7ScRb1q9Xw0AFEFLB7yq"
-ACCESS_TOKEN="470209050-x9sI8xouIVsw2YSSjyOG6aHFDlRPIeVwJepjatAz"
-ACCESS_TOKEN_SECRET="1Gi09PyW79NPmnjGZ9aM5e3kFeBqTSZT0FGKnCuxdfC8S"
+CONSUMER_KEY=
+CONSUMER_SECRET=
+ACCESS_TOKEN=
+ACCESS_TOKEN_SECRET=
 
 # Tweet-properties
 # Datetimes in the format 'DD.MM.YYYY hh:mm:ss'
-START_TIME = "02.06.2017 00:00:00"
-END_TIME = "01.08.2017 00:00:00"
+START_TIME = "02.08.2017 00:00:00"
+END_TIME = "12.12.2017 00:00:00"
 
 # maximum number of tweets per user (leave empty if no max value should be used)
 # NOTE: most recent (=newer) tweets are used before older tweets
-MAX_TWEETS_PER_USER=300
+MAX_TWEETS_PER_USER =400
 
 # specifies if retweets of a user are used; if yes they are treated as if the user herself tweeted them
 USE_RETWEETS = True

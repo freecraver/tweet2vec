@@ -39,14 +39,21 @@ SCHEDULE = True
 # validate per user, not per tweet
 IS_GROUPED_VALIDATION = True
 
-# add users from validation/test-set iteratively to improve network
-USE_ITERATIVE_LEARNING = True
-
-# number of epoch from which on tweets from test-set are added
-NUM_EPOCHS_INCLUSION = 6
-
-# percentage of users added to training-set per epoch
-PERCENTAGE_ADDED_PER_EPOCH = 0.05
-
 # print additional info
 DEBUG_MODE = True
+
+# adaptive learning parameters
+# add users from validation/test-set iteratively to improve network
+AL_USE_ADAPTIVE_LEARNING = True
+
+# number of epoch from which on tweets from test-set are added
+AL_NUM_EPOCHS_INCLUSION = 6
+
+# percentage of users added to training-set per epoch
+AL_PERCENTAGE_ADDED_PER_EPOCH = 0.1
+
+# on each iteration not the top x of y users, but the top x/n users for all n groups are added
+AL_EQUAL_CLASS_LEARNING = True
+
+AL_LEARNING_RATE = 0.00001
+AL_MOMENTUM = 0.9

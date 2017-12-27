@@ -5,13 +5,14 @@ import numpy as np
 import sys
 import pickle as pkl
 import io
+import codecs
 
 import matplotlib.pyplot as plt
 
 K1 = 1
-K2 = 10
+K2 = 2
 
-HIST = False
+HIST = True
 
 def precision(p, t, k):
     '''
@@ -66,19 +67,19 @@ def readable_predictions(p, t, d, k, labeldict):
     return out
 
 def main(result_path, dict_path):
-    with open('%s/predictions.npy'%result_path,'r') as f:
+    with open('%s/predictions.npy'%result_path,'rb') as f:
         p = np.load(f)
-    with open('%s/targets.pkl'%result_path,'r') as f:
+    with open('%s/targets.pkl'%result_path,'rb') as f:
         t = pkl.load(f)
-    with open('%s/data.pkl'%result_path,'r') as f:
+    with open('%s/data.pkl'%result_path,'rb') as f:
         d = pkl.load(f)
-    with open('%s/embeddings.npy'%result_path,'r') as f:
+    with open('%s/embeddings.npy'%result_path,'rb') as f:
         e = np.load(f)
-    with open('%s/label_dict.pkl'%dict_path,'r') as f:
+    with open('%s/label_dict.pkl'%dict_path,'rb') as f:
         labeldict = pkl.load(f)
 
     readable = readable_predictions(p, t, d, 10, labeldict)
-    with io.open('%s/readable.txt'%result_path,'w') as f:
+    with codecs.open('%s/readable.txt'%result_path,'w','utf-8') as f:
         for line in readable:
             f.write(line)
 

@@ -133,9 +133,9 @@ def save_dictionary(worddict, wordcount, loc):
     """
     Save a dictionary to the specified location 
     """
-    with open(loc, 'w') as f:
-        pkl.dump(worddict, f)
-        pkl.dump(wordcount, f)
+    with open(loc, 'wb') as f:
+        pkl.dump(worddict, f, pkl.HIGHEST_PROTOCOL)
+        pkl.dump(wordcount, f, pkl.HIGHEST_PROTOCOL)
 
 def build_label_dictionary(targets):
     """
