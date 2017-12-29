@@ -36,8 +36,10 @@ BIAS = False
 SCHEDULE = True
 
 # extensions by MF
-# validate per user, not per tweet
-IS_GROUPED_VALIDATION = True
+# validate per tweet; per average classification of user; per nr. of max classifications of user
+GV_NONE, GV_AVERAGE, GV_ARGMAX = range(0,3)
+GROUP_VALIDATION_MODE = GV_ARGMAX
+IS_GROUPED_VALIDATION = (GROUP_VALIDATION_MODE != GV_NONE)
 
 # print additional info
 DEBUG_MODE = True

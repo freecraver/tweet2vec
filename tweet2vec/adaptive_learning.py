@@ -1,6 +1,7 @@
+from __future__ import division
 import numpy as np
 import pandas as pd
-from tweet2vec.settings_char import DEBUG_MODE, AL_EQUAL_CLASS_LEARNING
+from tweet2vec.settings_char import DEBUG_MODE, AL_EQUAL_CLASS_LEARNING, GROUP_VALIDATION_MODE, GV_AVERAGE, GV_ARGMAX
 
 
 def predict_user(single_predictions, users, n_classes, nr_top_value=None, labeldict=None):
@@ -18,9 +19,20 @@ def predict_user(single_predictions, users, n_classes, nr_top_value=None, labeld
     np_single_predictions = np.array(single_predictions)
     unique_users, user_indices, user_cnt = np.unique(users, return_inverse=True, return_counts=True)
     avg_class_probabilities = np.zeros(len(unique_users) * n_classes).reshape(len(unique_users), n_classes)
-    # get average probability for each user as an array with a value for each class
-    for i in range(len(unique_users)):
-        avg_class_probabilities[i] = [sum(x) / user_cnt[i] for x in zip(*np_single_predictions[user_indices == i])]
+
+    if GROUP_VALIDATION_MODE == GV_AVERAGE:
+        # get average probability for each user as an array with a value for each class
+        for i in range(len(unique_users)):
+            avg_class_probabilities[i] = [sum(x) / user_cnt[i] for x in zip(*np_single_predictions[user_indices == i])]
+    elif GROUP_VALIDATION_MODE == GV_ARGMAX:
+        # get class-index for max-classification for each tweet
+        np_single_argmax = np.argmax(np_single_predictions, axis=1)
+        # set weights according to max-classified tweets
+        for i in range(len(unique_users)):
+            avg_class_probabilities[i] = np.bincount(np_single_argmax[user_indices == i],
+                                                     minlength=n_classes).astype('float32') / user_cnt[i]
+    else:
+        raise Exception("Invalid validation mode (%s) - please check settings.char" % GROUP_VALIDATION_MODE)
 
     # order by descending probability
     rank = np.argsort(avg_class_probabilities)[:, ::-1]
