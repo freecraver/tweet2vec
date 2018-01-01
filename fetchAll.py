@@ -3,11 +3,14 @@
 
 import tweepy  # https://github.com/tweepy/tweepy
 import csv
+import pandas as pd
 import codecs
+import random
 from input.settings_fetch import USER_INPUT_FILE, ALREADY_FETCHED_USERS_FILE, TRAINING_FILE, IS_VALIDATION,\
     VALIDATION_FILE, USE_RETWEETS
 from input.settings_fetch import ACCESS_TOKEN, ACCESS_TOKEN_SECRET, CONSUMER_KEY, CONSUMER_SECRET
-from input.settings_fetch import EQUALIZE_USERS_FOR_CLASSES, START_TIME, END_TIME, MAX_TWEETS_PER_USER
+from input.settings_fetch import EQUALIZATION_METHOD, START_TIME, END_TIME, MAX_TWEETS_PER_USER, MIN_TWEETS_PER_USER,\
+    EQ_USER_FOR_CLASS, EQ_TWEETS_FOR_CLASS
 from datetime import datetime
 
 from collections import Counter
@@ -33,6 +36,7 @@ def get_all_tweets_for_user(username):
     start_datetime = datetime.strptime(START_TIME, "%d.%m.%Y %H:%M:%S")
     end_datetime = datetime.strptime(END_TIME, "%d.%m.%Y %H:%M:%S")
 
+    print("---------------------")
     print("fetching tweets for user %s before id %s" % (username, timespan_max_id or "[MAX]"))
 
     try:
@@ -69,7 +73,7 @@ def get_all_tweets_for_user(username):
                 print("all %s tweets of %s fetched" % (len(user_tweets), username))
                 break
             else:
-                print("...%s tweets of %s added so far" % (len(user_tweets), username))
+                print("...%s tweets of %s added so far" % (min(len(user_tweets), MAX_TWEETS_PER_USER), username))
                 if fetched_tweets[-1].created_at < start_datetime:
                     print("fetched last tweet in timespan for %s" % username)
                     break
@@ -107,7 +111,7 @@ def get_user_with_category_from_csv(file_path):
     return cat_list
 
 
-def get_equal_subclasses(user_list):
+def get_equal_user_subclasses(user_list):
     """
     :param user_list: list containing [<userhandle>,<category>]
     :return: list with the first n entries for each category,
@@ -130,6 +134,52 @@ def get_equal_subclasses(user_list):
     return capped_list
 
 
+def filter_equal_tweet_subclasses(file_name):
+    """
+    reads in all tweets from file and writes back equal number of tweets for all classes
+    :param file_name: file containing tweets
+    :return: nothing
+    """
+    print("Filtering tweets to obtain equal subclasses")
+    df = pd.read_csv(file_name, sep='\t', header=None)
+    if len(df.columns) == 3:
+        df.columns = ["user", "group", "tweet"]
+    else:
+        df.columns = ["group", "tweet"]
+
+    groupby_obj = df.groupby("group")
+    group_cnt = groupby_obj["tweet"].count()
+    if len(df.columns) != 3:
+        df_new = df.groupby("group").apply(lambda x: x.sample(group_cnt.min()))
+    else:
+        dfs = []
+        # get the mean number of tweets per user for the group with the least amount of tweets
+        # this is used to get a similar number of users per group
+        mean_tweet_per_user = int(groupby_obj.get_group(group_cnt.idxmin()).groupby(["user"])["tweet"].count().mean())
+        for group_name in groupby_obj.groups:
+            df_group = groupby_obj.get_group(group_name).sample(frac=1)
+            user_groupby_obj = df_group.groupby("user")
+            tweets_left = group_cnt.min()
+            start_idx = 0
+            while tweets_left > 0:
+                user_list = user_groupby_obj.groups.keys()
+                random.shuffle(user_list)
+                for user_name in user_list:
+                    # try getting avg number of tweets
+                    df_user = user_groupby_obj.get_group(user_name)[start_idx:
+                                                                    start_idx+min(mean_tweet_per_user, tweets_left)]
+                    dfs.append(df_user)
+                    tweets_left -= df_user["tweet"].count()
+                    if tweets_left <= 0:
+                        break
+                start_idx += mean_tweet_per_user
+
+        df_new = pd.concat(dfs)
+
+    df_new.to_csv(file_name, sep='\t', header=False, index=False)
+    print("Reduced tweets from %d to %d" % (df["tweet"].count(), df_new["tweet"].count()))
+
+
 if __name__ == "__main__":
     auth = tweepy.OAuthHandler(CONSUMER_KEY, CONSUMER_SECRET)
     auth.set_access_token(ACCESS_TOKEN, ACCESS_TOKEN_SECRET)
@@ -138,8 +188,8 @@ if __name__ == "__main__":
 
     output_file = VALIDATION_FILE if IS_VALIDATION else TRAINING_FILE
 
-    if EQUALIZE_USERS_FOR_CLASSES:
-        user_list = get_equal_subclasses(user_list)
+    if EQUALIZATION_METHOD == EQ_USER_FOR_CLASS:
+        user_list = get_equal_user_subclasses(user_list)
 
     processed_users = get_fetched_users(ALREADY_FETCHED_USERS_FILE)
 
@@ -150,24 +200,30 @@ if __name__ == "__main__":
                 # couldn't fetch tweets
                 continue
 
-            # write all tweets with preceding category and delimiter
-            with codecs.open(output_file, 'a', 'utf8') as f:
-                for tweet in user_tweets:
-                    tweet_text = ""
-                    # write <original tweet> instead of RT @userabc:<original tweet>
-                    if hasattr(tweet, "retweeted_status"):
-                        tweet_text = tweet.retweeted_status.full_text
-                    else:
-                        tweet_text = tweet.full_text
+            if MIN_TWEETS_PER_USER is None or MIN_TWEETS_PER_USER <= len(user_tweets):
+                # write all tweets with preceding category and delimiter
+                with codecs.open(output_file, 'a', 'utf8') as f:
+                    for tweet in user_tweets:
+                        tweet_text = ""
+                        # write <original tweet> instead of RT @userabc:<original tweet>
+                        if hasattr(tweet, "retweeted_status"):
+                            tweet_text = tweet.retweeted_status.full_text
+                        else:
+                            tweet_text = tweet.full_text
 
-                    tweet_text = tweet_text.replace("\n", " ")
-                    if not IS_VALIDATION:
-                        f.write("%s%s%s\n" % (entry[1], output_delimiter, tweet_text))
-                    else:
-                        # also include username
-                        f.write("%s%s%s%s%s\n" % (entry[0], output_delimiter, entry[1], output_delimiter, tweet_text))
+                        tweet_text = tweet_text.replace("\n", " ")
+                        if not IS_VALIDATION:
+                            f.write("%s%s%s\n" % (entry[1], output_delimiter, tweet_text))
+                        else:
+                            # also include username
+                            f.write("%s%s%s%s%s\n" % (entry[0], output_delimiter, entry[1], output_delimiter, tweet_text))
+            else:
+                print("removed user %s, because only %d tweets were found" % (entry[0], len(user_tweets)))
 
             # write user to fetched_user_file, if fetching process is terminated
             with open(ALREADY_FETCHED_USERS_FILE, 'a') as f:
                 f.write(entry[0]+"\n")
                 processed_users.append(entry[0])
+
+    if EQUALIZATION_METHOD == EQ_TWEETS_FOR_CLASS:
+        filter_equal_tweet_subclasses(output_file)
