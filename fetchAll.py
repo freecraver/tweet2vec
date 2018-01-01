@@ -5,7 +5,7 @@ import tweepy  # https://github.com/tweepy/tweepy
 import csv
 import pandas as pd
 import codecs
-import random
+from tweet2vec.adaptive_learning import get_equal_subclasses
 from input.settings_fetch import USER_INPUT_FILE, ALREADY_FETCHED_USERS_FILE, TRAINING_FILE, IS_VALIDATION,\
     VALIDATION_FILE, USE_RETWEETS
 from input.settings_fetch import ACCESS_TOKEN, ACCESS_TOKEN_SECRET, CONSUMER_KEY, CONSUMER_SECRET
@@ -142,40 +142,7 @@ def filter_equal_tweet_subclasses(file_name):
     """
     print("Filtering tweets to obtain equal subclasses")
     df = pd.read_csv(file_name, sep='\t', header=None)
-    if len(df.columns) == 3:
-        df.columns = ["user", "group", "tweet"]
-    else:
-        df.columns = ["group", "tweet"]
-
-    groupby_obj = df.groupby("group")
-    group_cnt = groupby_obj["tweet"].count()
-    if len(df.columns) != 3:
-        df_new = df.groupby("group").apply(lambda x: x.sample(group_cnt.min()))
-    else:
-        dfs = []
-        # get the mean number of tweets per user for the group with the least amount of tweets
-        # this is used to get a similar number of users per group
-        mean_tweet_per_user = int(groupby_obj.get_group(group_cnt.idxmin()).groupby(["user"])["tweet"].count().mean())
-        for group_name in groupby_obj.groups:
-            df_group = groupby_obj.get_group(group_name).sample(frac=1)
-            user_groupby_obj = df_group.groupby("user")
-            tweets_left = group_cnt.min()
-            start_idx = 0
-            while tweets_left > 0:
-                user_list = user_groupby_obj.groups.keys()
-                random.shuffle(user_list)
-                for user_name in user_list:
-                    # try getting avg number of tweets
-                    df_user = user_groupby_obj.get_group(user_name)[start_idx:
-                                                                    start_idx+min(mean_tweet_per_user, tweets_left)]
-                    dfs.append(df_user)
-                    tweets_left -= df_user["tweet"].count()
-                    if tweets_left <= 0:
-                        break
-                start_idx += mean_tweet_per_user
-
-        df_new = pd.concat(dfs)
-
+    df_new = get_equal_subclasses(df)
     df_new.to_csv(file_name, sep='\t', header=False, index=False)
     print("Reduced tweets from %d to %d" % (df["tweet"].count(), df_new["tweet"].count()))
 

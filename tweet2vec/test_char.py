@@ -179,6 +179,11 @@ def main(args):
             new_tweets = np.array(tweets)[tweet_included]
             new_targets = np.array(preds)[tweet_included][:, 0]
 
+            _, new_targets, new_tweets = adaptive_learning.get_equal_subclasses_arr(
+                np.array(single_users)[tweet_included],
+                new_targets,
+                new_tweets)
+
             if len(new_tweets) > 0:
                 # reset network to overthrow current modifications
                 predict, encode, train = load_network(model_path, n_classes, n_char, m_num)
@@ -205,7 +210,7 @@ def main(args):
         with open('%s/targets.pkl' % save_path, 'wb') as f:
             pkl.dump(out_target, f)
 
-        if not AL_USE_ADAPTIVE_LEARNING or (AL_PERCENTAGE_ADDED_PER_EPOCH * iteration_nr) >= 100:
+        if not AL_USE_ADAPTIVE_LEARNING or (AL_PERCENTAGE_ADDED_PER_EPOCH * iteration_nr) >= 1:
             break
 
 if __name__ == '__main__':

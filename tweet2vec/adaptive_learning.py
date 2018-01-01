@@ -1,6 +1,7 @@
 from __future__ import division
 import numpy as np
 import pandas as pd
+import random
 from tweet2vec.settings_char import DEBUG_MODE, AL_EQUAL_CLASS_LEARNING, GROUP_VALIDATION_MODE, GV_AVERAGE, GV_ARGMAX
 
 
@@ -80,3 +81,60 @@ def get_included_user_indices(avg_class_probabilities, nr_top_value):
         included_user_indices = np.argsort(certainty)[:(int(nr_top_value)*-1)-1:-1]
 
     return included_user_indices
+
+
+def get_equal_subclasses(df):
+    """
+    :param df: pandas-dataframe with either 3 (mapped to [user, group, tweet]) or 2 (m. t. [group, tweet]) columns
+    :return: pandas-dataframe in same format, containing the same amount of tweets for all classes
+    """
+    if len(df.columns) == 3:
+        df.columns = ["user", "group", "tweet"]
+    else:
+        df.columns = ["group", "tweet"]
+
+    groupby_obj = df.groupby("group")
+    group_cnt = groupby_obj["tweet"].count()
+    if len(df.columns) != 3:
+        df_new = df.groupby("group").apply(lambda x: x.sample(group_cnt.min()))
+    else:
+        dfs = []
+        # get the mean number of tweets per user for the group with the least amount of tweets
+        # this is used to get a similar number of users per group
+        mean_tweet_per_user = int(groupby_obj.get_group(group_cnt.idxmin()).groupby(["user"])["tweet"].count().mean())
+        for group_name in groupby_obj.groups:
+            df_group = groupby_obj.get_group(group_name).sample(frac=1)
+            user_groupby_obj = df_group.groupby("user")
+            tweets_left = group_cnt.min()
+            start_idx = 0
+            while tweets_left > 0:
+                user_list = user_groupby_obj.groups.keys()
+                random.shuffle(user_list)
+                for user_name in user_list:
+                    # try getting avg number of tweets
+                    df_user = user_groupby_obj.get_group(user_name)[start_idx:
+                                                                    start_idx + min(mean_tweet_per_user, tweets_left)]
+                    dfs.append(df_user)
+                    tweets_left -= df_user["tweet"].count()
+                    if tweets_left <= 0:
+                        break
+                start_idx += mean_tweet_per_user
+
+        df_new = pd.concat(dfs)
+
+    return df_new
+
+
+def get_equal_subclasses_arr(arr_user, arr_group, arr_tweet):
+    """
+    maps three numpy-arrays to a pandas-dataframe and calls subsampling function
+    :return: three subsampled numpy arrays
+    """
+    # use tweet indices instead of tweets (to cope with multidimensionality)
+    tweet_indices = np.arange(np.size(arr_tweet,0))
+    cols = {"user":arr_user, "group": arr_group, "tweet": tweet_indices}
+    df_tweets = pd.DataFrame(cols)
+    # restore order (dict removes order)
+    df_tweets = df_tweets[["user", "group", "tweet"]]
+    df_reduced = get_equal_subclasses(df_tweets)
+    return df_reduced["user"].as_matrix(), df_reduced["group"].as_matrix(), arr_tweet[df_reduced["tweet"],:]
