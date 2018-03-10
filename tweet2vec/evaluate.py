@@ -4,15 +4,18 @@ For evaluating precision and recall metrics
 import numpy as np
 import sys
 import pickle as pkl
-import io
+import seaborn as sns
 import codecs
+from sklearn.metrics import confusion_matrix
 
 import matplotlib.pyplot as plt
 
 K1 = 1
 K2 = 2
 
-HIST = True
+HIST = False
+CONF_MAT = True # Show confusion matrix
+EVALUATE_USER_LVL = True # show scores per user, not per tweet
 
 def precision(p, t, k):
     '''
@@ -57,14 +60,29 @@ def meanrank(p, t):
         res[idx] = minrank
     return np.mean(res), res
 
-def readable_predictions(p, t, d, k, labeldict):
+def readable_predictions(p, t, d, k, u, labeldict):
     out = []
     for idx, item in enumerate(d):
         preds = p[idx,:k]
         plabels = ','.join([labeldict.keys()[ii-1] if ii > 0 else '<unk>' for ii in preds])
         tlabels = ','.join([labeldict.keys()[ii-1] if ii > 0 else '<unk>' for ii in t[idx]])
-        out.append('%s\t%s\t%s\n'%(tlabels,plabels,item))
+        out.append('%s\t%s\t%s\t%s\n'%(tlabels, plabels, u[idx], item))
     return out
+
+def consolidate_users(predictions, targets, users):
+    unique_users, user_indices, user_cnt = np.unique(users, return_inverse=True, return_counts=True)
+    p = []
+    t = []
+    u = []
+    for i in range(len(unique_users)):
+        # fetch first occurrence of user and use its values (all values per user should be identical)
+        idx = np.argmax(user_indices==i)
+        p.append(predictions[idx])
+        t.append(targets[idx])
+        u.append(unique_users[i])
+
+    return np.array(p), t, u
+
 
 def main(result_path, dict_path):
     with open('%s/predictions.npy'%result_path,'rb') as f:
@@ -78,10 +96,17 @@ def main(result_path, dict_path):
     with open('%s/label_dict.pkl'%dict_path,'rb') as f:
         labeldict = pkl.load(f)
 
-    readable = readable_predictions(p, t, d, 10, labeldict)
+    if EVALUATE_USER_LVL:
+        with open('%s/users.pkl' % result_path, 'rb') as f:
+            u = pkl.load(f)
+
+    readable = readable_predictions(p, t, d, 10, u, labeldict)
     with codecs.open('%s/readable.txt'%result_path,'w','utf-8') as f:
         for line in readable:
             f.write(line)
+
+    if EVALUATE_USER_LVL:
+        p, t, u = consolidate_users(p, t, u)
 
     meanr, allr = meanrank(p,t)
     print("Precision @ {} = {}".format(K1,precision(p,t,K1)))
@@ -94,6 +119,11 @@ def main(result_path, dict_path):
         width = 0.7 * (bins[1] - bins[0])
         center = (bins[:-1] + bins[1:]) / 2
         plt.bar(center, hist, align='center', width=width)
+        plt.show()
+
+    if CONF_MAT:
+        conf_matrix = confusion_matrix(t,p[:,0])
+        sns.heatmap(conf_matrix, annot=True, xticklabels=list(labeldict), yticklabels=list(labeldict))
         plt.show()
 
 if __name__ == '__main__':

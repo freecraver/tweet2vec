@@ -209,6 +209,8 @@ def main(args):
             np.save(f, np.asarray(out_emb))
         with open('%s/targets.pkl' % save_path, 'wb') as f:
             pkl.dump(out_target, f)
+        with open('%s/users.pkl' % save_path, 'wb') as f:
+            pkl.dump(single_users, f)
 
         if not AL_USE_ADAPTIVE_LEARNING or (AL_PERCENTAGE_ADDED_PER_EPOCH * iteration_nr) >= 1:
             break
