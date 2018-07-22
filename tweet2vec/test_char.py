@@ -212,7 +212,7 @@ def main(args):
         with open('%s/users.pkl' % save_path, 'wb') as f:
             pkl.dump(single_users, f)
 
-        if not AL_USE_ADAPTIVE_LEARNING or (AL_PERCENTAGE_ADDED_PER_EPOCH * iteration_nr) >= 1:
+        if not AL_USE_ADAPTIVE_LEARNING or (AL_PERCENTAGE_ADDED_PER_EPOCH * (iteration_nr-1)) >= 1:
             break
 
 if __name__ == '__main__':

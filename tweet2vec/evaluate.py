@@ -7,13 +7,14 @@ import pickle as pkl
 import seaborn as sns
 import codecs
 from sklearn.metrics import confusion_matrix
+from datetime import datetime
 
 import matplotlib.pyplot as plt
 
 K1 = 1
 K2 = 2
 
-HIST = False
+HIST = True
 CONF_MAT = True # Show confusion matrix
 EVALUATE_USER_LVL = True # show scores per user, not per tweet
 
@@ -60,13 +61,16 @@ def meanrank(p, t):
         res[idx] = minrank
     return np.mean(res), res
 
-def readable_predictions(p, t, d, k, u, labeldict):
+def readable_predictions(p, t, d, k, labeldict, users = None):
     out = []
     for idx, item in enumerate(d):
         preds = p[idx,:k]
         plabels = ','.join([labeldict.keys()[ii-1] if ii > 0 else '<unk>' for ii in preds])
         tlabels = ','.join([labeldict.keys()[ii-1] if ii > 0 else '<unk>' for ii in t[idx]])
-        out.append('%s\t%s\t%s\t%s\n'%(tlabels, plabels, u[idx], item))
+        if users is None:
+            out.append('%s\t%s\t%s\n' % (tlabels, plabels, item))
+        else:
+            out.append('%s\t%s\t%s\t%s\n'%(tlabels, plabels, users[idx], item))
     return out
 
 def consolidate_users(predictions, targets, users):
@@ -99,8 +103,10 @@ def main(result_path, dict_path):
     if EVALUATE_USER_LVL:
         with open('%s/users.pkl' % result_path, 'rb') as f:
             u = pkl.load(f)
+        readable = readable_predictions(p, t, d, 10, labeldict, users = u)
+    else:
+        readable = readable_predictions(p, t, d, 10, labeldict)
 
-    readable = readable_predictions(p, t, d, 10, u, labeldict)
     with codecs.open('%s/readable.txt'%result_path,'w','utf-8') as f:
         for line in readable:
             f.write(line)
@@ -118,13 +124,15 @@ def main(result_path, dict_path):
         hist, bins = np.histogram(allr, bins=50)
         width = 0.7 * (bins[1] - bins[0])
         center = (bins[:-1] + bins[1:]) / 2
+        plt.figure()
         plt.bar(center, hist, align='center', width=width)
-        plt.show()
+        plt.savefig('hist_' + datetime.now().strftime("%H-%M-%S") + ".png")
 
     if CONF_MAT:
         conf_matrix = confusion_matrix(t,p[:,0])
+        plt.figure()
         sns.heatmap(conf_matrix, annot=True, xticklabels=list(labeldict), yticklabels=list(labeldict))
-        plt.show()
+        plt.savefig('conf_mat_' + datetime.now().strftime("%H-%M-%S") + ".png")
 
 if __name__ == '__main__':
     main(sys.argv[1],sys.argv[2])
