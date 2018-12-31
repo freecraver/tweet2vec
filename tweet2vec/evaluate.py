@@ -16,7 +16,7 @@ K2 = 2
 
 HIST = True
 CONF_MAT = True # Show confusion matrix
-EVALUATE_USER_LVL = True # show scores per user, not per tweet
+EVALUATE_USER_LVL = False # show scores per user, not per tweet
 
 def precision(p, t, k):
     '''
@@ -131,7 +131,7 @@ def main(result_path, dict_path):
     if CONF_MAT:
         conf_matrix = confusion_matrix(t,p[:,0])
         plt.figure()
-        sns.heatmap(conf_matrix, annot=True, xticklabels=list(labeldict), yticklabels=list(labeldict))
+        sns.heatmap(conf_matrix, annot=True, xticklabels=list(labeldict), yticklabels=list(labeldict), fmt='g')
         plt.savefig('conf_mat_' + datetime.now().strftime("%H-%M-%S") + ".png")
 
 if __name__ == '__main__':
